@@ -32,12 +32,18 @@ class MCPClient:
         # 根据文件后缀选择启动命令
         command = "python" if is_python else "node"
         # MCP服务器参数，包括启动命令、脚本路径参数、环境变量（None为使用默认）
-        server_params = StdioServerParameters(command=command, args=[server_script_path], env=None)
+        server_params = StdioServerParameters(
+            command=command, args=[server_script_path], env=None
+        )
         # 建立MCP stdio通信
-        stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
+        stdio_transport = await self.exit_stack.enter_async_context(
+            stdio_client(server_params)
+        )
         self.stdio, self.write = stdio_transport
         # 创建MCP客户端会话对象
-        self.session = await self.exit_stack.enter_async_context(ClientSession(self.stdio, self.write))
+        self.session = await self.exit_stack.enter_async_context(
+            ClientSession(self.stdio, self.write)
+        )
         # 初始化会话
         await self.session.initialize()
         # 获取工具列表
@@ -54,25 +60,25 @@ class MCPClient:
                 "function": {
                     "name": tool.name,
                     "description": tool.description,
-                    "input_schema": tool.inputSchema
-                }
-            } for tool in response.tools
+                    "input_schema": tool.inputSchema,
+                },
+            }
+            for tool in response.tools
         ]
         # 提取用户查询关键词，生成文件名
-        keyword_match = re.search(r'(关于|分析|查询|搜索|查看)([^的\s，。？、\n]+)', query)
+        keyword_match = re.search(
+            r"(关于|分析|查询|搜索|查看)([^的\s，。？、\n]+)", query
+        )
         keyword = keyword_match.group(2) if keyword_match else "分析对象"
         safe_keyword = re.sub(r'[\\/:*?"<>|]', "", keyword)[:20]
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         txt_filename = f"sentiment_{safe_keyword}_{timestamp}.txt"
         txt_path = os.path.join("sentiment_report", txt_filename)
         # 更新查询，将文件名添加到原始查询中，使大模型调用工具时可以考虑到文件名
-        new_query = query.strip() + f" [txt_filename:{txt_filename}] [txt_path:{txt_path}]"
-        messages = [
-            {
-                "role": "user",
-                "content": new_query
-            }
-        ]
+        new_query = (
+                query.strip() + f" [txt_filename:{txt_filename}] [txt_path:{txt_path}]"
+        )
+        messages = [{"role": "user", "content": new_query}]
         tool_plan = await self.plan_tool_use(new_query, available_tools)
         tool_outputs = {}
         # 依次执行工具
@@ -88,12 +94,21 @@ class MCPClient:
             # 注入统一的文件名和路径
             if tool_name == "analyze_sentiment" and "filename" not in tool_args:
                 tool_args["filename"] = txt_filename
-            if tool_name == "send_email_with_attachment" and "attachment_path" not in tool_args:
+            if (
+                    tool_name == "send_email_with_attachment"
+                    and "attachment_path" not in tool_args
+            ):
                 tool_args["attachment_path"] = txt_path
 
             result = await self.session.call_tool(tool_name, tool_args)
             tool_outputs[tool_name] = result.content[0].text  # 记录工具返回结果
-            messages.append({"role": "tool", "tool_call_id": tool_name, "content": result.content[0].text})
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_name,
+                    "content": result.content[0].text,
+                }
+            )
         # 使用大模型生成汇总结果
         final_result = self.client.chat.completions.create(
             model=self.model,
@@ -104,7 +119,7 @@ class MCPClient:
         # 获取文件名辅助函数
         def clean_filename(text: str) -> str:
             text = text.strip()
-            text = re.sub(r'[\\/:*?"<>|]', '', text)
+            text = re.sub(r'[\\/:*?"<>|]', "", text)
             return text[:50]
 
         # 存储查询和大模型回复
@@ -133,10 +148,15 @@ class MCPClient:
             except Exception as e:
                 print(f"发生错误：{str(e)}")
 
-    async def plan_tool_use(self, query:str, tools:List[dict]) -> List[dict]:
+    async def plan_tool_use(self, query: str, tools: List[dict]) -> List[dict]:
         print("\n提交给大模型的工具有：")
         print(json.dumps(tools, esure_ascii=False, indent=2))
-        tool_list_text = "\n".join([f"--{tool['function']['name']}: {tool['function']['description']}" for tool in tools])
+        tool_list_text = "\n".join(
+            [
+                f"--{tool['function']['name']}: {tool['function']['description']}"
+                for tool in tools
+            ]
+        )
         # 构造全局提示
         system_prompt = {
             "role": "system",
@@ -145,15 +165,13 @@ class MCPClient:
                 "你只能从以下工具中选择（严格使用工具名称）：\n"
                 f"{tool_list_text}\n"
                 "如果需多个工具串联使用，后续步骤中可以使用 {{上一步工具名}} 占位。\n"
-                "返回格式：JSON数组，每个元素是一个对象，包含 name 和 arguments 两个字段，name 是工具名，arguments 是工具参数。\n"""
+                "返回格式：JSON数组，每个元素是一个对象，包含 name 和 arguments 两个字段，name 是工具名，arguments 是工具参数。\n"
+                ""
                 "不要返回自然语言，不要使用未列出的工具名。\n"
-            )
+            ),
         }
 
-        plan_messages = [
-            system_prompt,
-            {"role": "user", "content": query}
-        ]
+        plan_messages = [system_prompt, {"role": "user", "content": query}]
         plan_response = self.client.chat.completions.create(
             model=self.model,
             messages=plan_messages,
@@ -188,5 +206,6 @@ async def main():
     finally:
         await client.clean_up()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     asyncio.run(main())
