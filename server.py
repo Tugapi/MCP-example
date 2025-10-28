@@ -142,5 +142,6 @@ async def send_email_with_attachment(to: str, subject: str, body: str, file_name
     except Exception as e:
         return f"邮件发送失败：{str(e)}"
 
+
 if __name__ == '__main__':
     mcp.run(transport="stdio")
