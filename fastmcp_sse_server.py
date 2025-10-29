@@ -1,6 +1,6 @@
 from fastmcp import FastMCP
 
-mcp = FastMCP("stdio_server")
+mcp = FastMCP("sse_server")
 
 
 @mcp.resource("mcp:server_info")
@@ -67,4 +67,4 @@ def divide(a: float, b: float) -> float:
 
 
 if __name__ == '__main__':
-    mcp.run(transport="stdio")
+    mcp.run(transport="sse", host="127.0.0.1", port=3001)
